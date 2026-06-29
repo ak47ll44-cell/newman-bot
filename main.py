@@ -92,7 +92,7 @@ async def process_nickname(message: types.Message, state: FSMContext):
 
 @dp.callback_query(ReportStates.waiting_rank, F.data.startswith("rank_"))
 async def process_rank(callback: types.CallbackQuery, state: FSMContext):
-    rank_id = callback.data.split("_")
+    rank_id = callback.data.replace("rank_", "")  # Исправленное точное извлечение ID ранга
     info = RANKS_INFO[rank_id]
     await state.update_data(rank_title=info['title'], rank_req=info['req'])
     await callback.message.delete()
@@ -109,16 +109,14 @@ async def process_screen(message: types.Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    # --- ВЕЧНАЯ ПРОВЕРИКА ДУБЛИКАТОВ ЧЕРЕЗ ХЕШИ ТЕЛЕГРАМА ---
+    # --- ВЕЧНАЯ ПРОВЕРКА ДУБЛИКАТОВ ЧЕРЕЗ ИСТОРИЮ ТЕЛЕГРАМА ---
     is_duplicate = False
     original_owner = "Неизвестно"
     
-    # Бот сканирует последние 100 отчетов в твоем админ-чате
     try:
         async for msg in bot.get_chat_history(chat_id=ADMIN_CHAT_ID, limit=100):
             if msg.caption and f"🔑 HASH: {photo.file_unique_id}" in msg.caption:
                 is_duplicate = True
-                # Пробуем вытащить ник из старого сообщения
                 for line in msg.caption.split("\n"):
                     if "Игрок:" in line:
                         original_owner = line.replace("👤 Игрок:", "").strip()
@@ -130,7 +128,6 @@ async def process_screen(message: types.Message, state: FSMContext):
     if is_duplicate:
         admin_warning = f"🛑 <b>ОБМАН! Игрок очистил историю, но скрин уже использовался!</b>\nВпервые его прислал: <b>{original_owner}</b>\n----------------------------------------\n\n"
 
-    # Вшиваем уникальный невидимый маркер скриншота в конец сообщения (🔑 HASH)
     admin_text = (
         f"{admin_warning}📂 <b>ОТЧЕТ НА ПОВЫШЕНИЕ</b>\n\n"
         f"👤 Игрок: {data['nickname']}\n"
@@ -160,13 +157,14 @@ async def process_screen(message: types.Message, state: FSMContext):
             reply_markup=get_start_keyboard(), 
             parse_mode="HTML"
         )
+    await callback.answer()
 
 # --- 6. ОБРАБОТКА РЕШЕНИЙ АДМИНИСТРАЦИИ ---
 @dp.callback_query(F.data.startswith("adm_"))
 async def handle_admin_choice(callback: types.CallbackQuery):
     data_parts = callback.data.split("_")
-    action = data_parts
-    user_id = int(data_parts)
+    action = data_parts[1]
+    user_id = int(data_parts[2])
     
     admin_name = callback.from_user.first_name
     if callback.from_user.username:
