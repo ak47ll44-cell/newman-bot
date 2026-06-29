@@ -90,9 +90,14 @@ async def process_nickname(message: types.Message, state: FSMContext):
     await message.answer("Теперь выберите ранг, на который вы повышаетесь:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(ReportStates.waiting_rank)
 
-@dp.callback_query(ReportStates.waiting_rank, F.data.startswith("rank_"))
+@dp.callback_query(F.data.startswith("rank_"))
 async def process_rank(callback: types.CallbackQuery, state: FSMContext):
-    rank_id = callback.data.replace("rank_", "")  # Исправленное точное извлечение ID ранга
+    current_state = await state.get_state()
+    if current_state != ReportStates.waiting_rank:
+        await callback.answer("Пожалуйста, начните заполнение анкеты заново.")
+        return
+        
+    rank_id = callback.data.replace("rank_", "")
     info = RANKS_INFO[rank_id]
     await state.update_data(rank_title=info['title'], rank_req=info['req'])
     await callback.message.delete()
@@ -112,10 +117,11 @@ async def process_screen(message: types.Message, state: FSMContext):
     # --- ВЕЧНАЯ ПРОВЕРКА ДУБЛИКАТОВ ЧЕРЕЗ ИСТОРИЮ ТЕЛЕГРАМА ---
     is_duplicate = False
     original_owner = "Неизвестно"
+    target_hash = f"HASH: {photo.file_unique_id}"
     
     try:
         async for msg in bot.get_chat_history(chat_id=ADMIN_CHAT_ID, limit=100):
-            if msg.caption and f"🔑 HASH: {photo.file_unique_id}" in msg.caption:
+            if msg.caption and target_hash in msg.caption:
                 is_duplicate = True
                 for line in msg.caption.split("\n"):
                     if "Игрок:" in line:
@@ -134,7 +140,7 @@ async def process_screen(message: types.Message, state: FSMContext):
         f"🎖 Цель: {data['rank_title']}\n"
         f"💰 Оплата: {data['rank_req']}\n"
         f"🆔 TG ID: <code>{message.from_user.id}</code>\n\n"
-        f"🔍 <i>🔑 HASH: {photo.file_unique_id}</i>"
+        f"🔍 🔑 HASH: {photo.file_unique_id}"
     )
     
     await bot.send_photo(
@@ -157,7 +163,6 @@ async def process_screen(message: types.Message, state: FSMContext):
             reply_markup=get_start_keyboard(), 
             parse_mode="HTML"
         )
-    await callback.answer()
 
 # --- 6. ОБРАБОТКА РЕШЕНИЙ АДМИНИСТРАЦИИ ---
 @dp.callback_query(F.data.startswith("adm_"))
