@@ -23,7 +23,7 @@ def keep_alive():
 
 # --- 2. НАСТРОЙКИ ---
 BOT_TOKEN = "8817735126:AAFoJYpehYcoy4mYtLYvJXQsqtgInlNEIGA"
-ADMIN_CHAT_ID = -1004361381034
+ADMIN_CHAT_ID = -1004361381034  # Твой чат админов
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -61,22 +61,33 @@ def check_duplicate(file_unique_id, user_id, nickname):
 
 init_db()
 
-# --- 4. РАНГИ И ЦЕНЫ (ШАГ +10кк) ---
+# --- 4. РАНГИ И ЦЕНЫ ---
 RANKS_INFO = {
-    "2": {"title": "2 ранг", "req": "5.000.000$ (5кк) на счет семьи"},
-    "3": {"title": "3 ранг", "req": "15.000.000$ (15кк) на счет семьи"},
-    "4": {"title": "4 ранг", "req": "25.000.000$ (25кк) на счет семьи"},
-    "5": {"title": "5 ранг", "req": "35.000.000$ (35кк) на счет семьи"},
-    "6": {"title": "6 ранг", "req": "45.000.000$ (45кк) на счет семьи"},
-    "7": {"title": "7 ранг", "req": "55.000.000$ (55кк) на счет семьи"},
-    "8": {"title": "8 ранг (Зам)", "req": "Доверие, вклад в семью, помощь в развитии"},
-    "9": {"title": "9 ранг (Гл. Зам)", "req": "Максимальное доверие лидера и руководство"}
+    "2": {"title": "2 ранг", "req": "5.000.000$ (5кк) на счет семьи", "btn": "На 2 ранг (5кк)"},
+    "3": {"title": "3 ранг", "req": "15.000.000$ (15кк) на счет семьи", "btn": "На 3 ранг (15кк)"},
+    "4": {"title": "4 ранг", "req": "25.000.000$ (25кк) на счет семьи", "btn": "На 4 ранг (25кк)"},
+    "5": {"title": "5 ранг", "req": "35.000.000$ (35кк) на счет семьи", "btn": "На 5 ранг (35кк)"},
+    "6": {"title": "6 ранг", "req": "45.000.000$ (45кк) на счет семьи", "btn": "На 6 ранг (45кк)"},
+    "7": {"title": "7 ранг", "req": "55.000.000$ (55кк) на счет семьи", "btn": "На 7 ранг (55кк)"},
+    "8": {"title": "8 ранг (Зам)", "req": "Доверие, вклад в семью, помощь в развитии", "btn": "На 8 ранг (Зам) (За заслуги)"},
+    "9": {"title": "9 ранг (Гл. Зам)", "req": "Максимальное доверие лидера и руководство", "btn": "На 9 ранг (Гл. Зам) (За заслуги)"}
 }
 
 class ReportStates(StatesGroup):
     waiting_nickname = State()
     waiting_rank = State()
     waiting_screen = State()
+
+# Кнопки для админ-чата (содержат ID игрока, чтобы бот знал кому писать)
+def get_admin_keyboard(user_id):
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="✅ Одобрить", callback_data=f"adm_approve_{user_id}"),
+                types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_deny_{user_id}")
+            ]
+        ]
+    )
 
 # --- 5. УВЕДОМЛЕНИЕ О ЗАПУСКЕ ---
 async def on_startup(bot: Bot):
@@ -105,7 +116,8 @@ async def process_nickname(message: types.Message, state: FSMContext):
     )
     await message.answer(warning_text, parse_mode="HTML")
     
-    buttons = [[types.InlineKeyboardButton(text=f"На {v['title']}", callback_data=f"rank_{k}")] for k, v in RANKS_INFO.items()]
+    # Кнопки с ценами прямо на них
+    buttons = [[types.InlineKeyboardButton(text=v['btn'], callback_data=f"rank_{k}")] for k, v in RANKS_INFO.items()]
     await message.answer("Теперь выберите ранг, на который вы повышаетесь:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(ReportStates.waiting_rank)
 
@@ -135,18 +147,56 @@ async def process_screen(message: types.Message, state: FSMContext):
         admin_warning = f"🛑 <b>ОБМАН!</b> Скрин уже был у: {check['nickname']} (ID: {check['user_id']})\n\n"
 
     admin_text = (
-        f"{admin_warning}📂 <b>ОТЧЕТ НА ПОВЫШЕНИЕ</b>\n"
+        f"{admin_warning}📂 <b>ОТЧЕТ НА ПОВЫШЕНИЕ</b>\n\n"
         f"👤 Игрок: {data['nickname']}\n"
         f"🎖 Цель: {data['rank_title']}\n"
         f"💰 Оплата: {data['rank_req']}\n"
         f"🆔 TG ID: <code>{message.from_user.id}</code>"
     )
-    await bot.send_photo(chat_id=ADMIN_CHAT_ID, photo=photo.file_id, caption=admin_text, parse_mode="HTML")
+    
+    # Отправляем админам С КНОПКАМИ одобрения/отклонения
+    await bot.send_photo(
+        chat_id=ADMIN_CHAT_ID, 
+        photo=photo.file_id, 
+        caption=admin_text, 
+        reply_markup=get_admin_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
 
     if check["status"] == "exists":
         await message.answer("⚠️ <b>У вас попытка обмана!</b> Вы скинули тот же скриншот, что кидали раньше. Отчет отклонен.", parse_mode="HTML")
     else:
         await message.answer("✅ <b>Ваш отчет успешно отправлен администрации!</b>", parse_mode="HTML")
+
+# --- 7. ОБРАБОТКА РЕШЕНИЙ АДМИНИСТРАЦИИ ---
+@dp.callback_query(F.data.startswith("adm_"))
+async def handle_admin_choice(callback: types.CallbackQuery):
+    # Разделяем данные кнопки
+    data_parts = callback.data.split("_")
+    action = data_parts[1]
+    user_id = int(data_parts[2])
+    
+    if action == "approve":
+        status_text = "🟢 ОДОБРЕН"
+        user_msg = "🎉 <b>Отличные новости!</b> Ваш отчет на повышение был одобрен. Зайдите в игру для получения ранга!"
+    else:
+        status_text = "🔴 ОТКЛОНЕН"
+        user_msg = "❌ <b>Ваш отчет на повышение был отклонен.</b> Проверьте условия или свяжитесь с руководством семьи."
+
+    # Обновляем отчет в админ-чате: пишем результат и убираем кнопки
+    await callback.message.edit_caption(
+        caption=f"{callback.message.caption}\n\n<b>[РЕШЕНИЕ АДМИНА]:</b> {status_text}",
+        reply_markup=None,
+        parse_mode="HTML"
+    )
+    
+    # Отправляем уведомление игроку в личку
+    try:
+        await bot.send_message(chat_id=user_id, text=user_msg, parse_mode="HTML")
+    except Exception:
+        pass  # На случай если игрок заблокировал бота
+        
+    await callback.answer()
 
 if __name__ == "__main__":
     import asyncio
