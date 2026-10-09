@@ -7,7 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiohttp import web
 
-API_TOKEN = '8855210799:AAFZrnVF2xOLd-ZCYxLHVeqjvEl0Kxm-hj4'
+# Бот берет токен из безопасных переменных Render
+API_TOKEN = os.environ.get('BOT_TOKEN', '8855210799:AAFZrnVF2xOLd-ZCYxLHVeqjvEl0Kxm-hj4')
 ADMIN_CHAT_ID = -1004361381034
 
 bot = Bot(token=API_TOKEN)
@@ -52,7 +53,6 @@ async def process_text_prompt(message: types.Message, state: FSMContext):
     status_msg = await message.answer("🚀 Запрос принят! Передаю задачу умному ИИ-мозгу...")
     output_video = f"final_result_{message.from_user.id}.mp4"
     
-    # Заглушка генерации
     await asyncio.sleep(5)
     shutil.copy(video_file, output_video)
     
@@ -68,12 +68,10 @@ async def process_text_prompt(message: types.Message, state: FSMContext):
         await message.answer("❌ Произошла ошибка.")
     await state.clear()
 
-# Функция-заглушка для Render, чтобы он не отключал бота
 async def handle(request):
     return web.Response(text="Bot is running!")
 
 async def main():
-    # Запуск веб-сервера для Render на порту 10000 (или порт от хостинга)
     app = web.Application()
     app.router.add_get('/', handle)
     runner = web.AppRunner(app)
@@ -81,8 +79,6 @@ async def main():
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     asyncio.create_task(site.start())
-    
-    # Запуск самого бота
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
